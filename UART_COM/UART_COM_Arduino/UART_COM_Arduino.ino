@@ -12,7 +12,7 @@ Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUM_LEDS, pinOutLampe, NEO_GRBW + NE
 #define pinInESP 13
 
 // Encodeur
-#define pinInBoutton 2 // SW
+#define pinInBoutton 2 // SW    (Bouton)
 #define pinInRotation 3 // DT
 #define pinInSensRotation 4 // CLK
 int positionEncodeur = 0;
@@ -20,6 +20,36 @@ int derniereRotation;
 int nouvelleRotation;
 bool sensRotation;
 
+// Configuration
+#include <EEPROM.h>
+
+struct Heure
+{
+  byte heure;
+  byte minute;
+};
+
+struct Configuration
+{
+  Heure heureDebut;
+  Heure heureFin;
+  byte luminosite;
+  byte rouge;
+  byte vert;
+  byte bleu;
+};
+
+int luminositeMin = 0;
+int luminositeMax = 0;
+
+Heure heureDebutActivite;
+Heure heureFinActivite;
+
+Configuration configuration1;
+Configuration configuration2;
+Configuration configuration3;
+Configuration configuration4;
+Configuration configuration5;
 
 void setup()
 {
@@ -39,15 +69,18 @@ void setup()
   pinMode(pinInSensRotation, INPUT);
   derniereRotation = digitalRead(pinInRotation); 
 
+  // On charge les configurations depuis l'EEPROM
+  Chargement_EEPROM();
+
   Serial.begin(9600);
 }
 
 void loop()
 {
-  LireEncodeur(); 
 }
 
-int LectureLuminosite()
+// Lis la valeur analogique de la luminosité sur un port analogique
+int LireLuminosite()
 {
   int etatLumiere = analogRead(pinInLuminosite);
   Serial.print("Lumiere : ");
@@ -55,7 +88,8 @@ int LectureLuminosite()
   return etatLumiere;
 }
 
-bool LectureMouvement()
+// Lis l'état du capteur de mouvement sur un port digital
+bool LireMouvement()
 {
   bool etatMouvement = digitalRead(pinInMouvement);
   Serial.print("Mouvement : ");
@@ -63,6 +97,7 @@ bool LectureMouvement()
   return etatMouvement;
 }
 
+// Modifie la configuration de l'anneau LED avec un port digital
 bool ConfigurerAnneau(uint32_t couleur)
 {
   // Couleur : strip.Color(rouge, vert, bleu, luminosite)
@@ -75,9 +110,23 @@ bool ConfigurerAnneau(uint32_t couleur)
   }
 }
 
-int RecieveByte(int pin)
+// Lis l'état d'un bouton avec un port digital
+bool LireBoutton()
 {
+  bool ret = digitalRead(pinInBoutton);
 
+  digitalWrite(pinInBoutton, HIGH);
+
+  Serial.print("Boutton : ");
+  Serial.println(!ret);
+
+  return !ret;
+}
+
+// Ecoute un port en particulier et lis puis transcrit une série de 8 bits émis sur ce port 
+// après un front montant
+int RecevoirByte(int pin)
+{
   Serial.println("Début de la réception ...");
 
   int num = 0;
@@ -99,78 +148,78 @@ int RecieveByte(int pin)
   Serial.println(num);
 
   return num;
-
 }
 
-bool LireBoutton()
+// Configuration et sauvegardes //////////////////////////////////////////////////////
+
+// Charge la configuration depuis l'EEPROM
+void Chargement_EEPROM()
 {
-  bool ret = digitalRead(pinInBoutton);
+  // Chargement de la dernière configuration
+  // get(address, data) : autre que des byte
+  // read(address) : byte
 
-  digitalWrite(pinInBoutton, HIGH);
+  // Structures de données
+  Heure typeHeure;
+  Configuration typeConfiguration;
 
-  Serial.print("Boutton : ");
-  Serial.println(!ret);
+  // Luminosité (1 byte)
+  luminositeMax = EEPROM.read(0);
+  luminositeMin = EEPROM.read(1);
 
-  return !ret;
+  // Activité (2 bytes)
+  heureDebutActivite = EEPROM.get(2, typeHeure);
+  heureFinActivite = EEPROM.get(4, typeHeure);
+
+  // Configurations (8 bytes)
+  configuration1 = EEPROM.get(6, typeConfiguration);
+  configuration2 = EEPROM.get(14, typeConfiguration);
+  configuration3 = EEPROM.get(22, typeConfiguration);
+  configuration4 = EEPROM.get(30, typeConfiguration);
+  configuration5 = EEPROM.get(38, typeConfiguration);
 }
 
-int LireEncodeur()
+// Sauvegrade la configuration dans l'EEPROM
+void Sauvegarde_EEPROM()
 {
-  nouvelleRotation = digitalRead(pinInRotation);
-
-  if (nouvelleRotation != derniereRotation){ 
-
-    // Sens horaire
-    if (digitalRead(pinInSensRotation) != nouvelleRotation) 
-    {
-      positionEncodeur ++;
-      sensRotation = true;
-
-    }
-    // Sens anti horaire 
-    else 
-    {
-      sensRotation = false;
-      positionEncodeur--;
-    }
-
-    Serial.print ("Rotation: ");
-    Serial.println(positionEncodeur);
-  }
+  // Attention : 100 000 écritures max, on a de la marge
+  // https://docs.arduino.cc/learn/built-in-libraries/eeprom/#length
   
-  derniereRotation = nouvelleRotation;
+  // put(address, data) : autre que des bytes a stocker
+  // update(address, value) : byte a stocker ssi différent de déjà stocké (sinon utiliser write)
 
-  return positionEncodeur;
+  // Ecriture de la dernière configuration
+
+  // Luminosité (1 byte)
+  EEPROM.update(0, luminositeMax);
+  EEPROM.update(1, luminositeMin);
+
+  // Activité (2 bytes)
+  EEPROM.put(2, heureDebutActivite);
+  EEPROM.put(4, heureFinActivite);
+
+  // Configurations (8 bytes)
+  EEPROM.put(6, configuration1);
+
+  EEPROM.put(14, configuration2);
+  EEPROM.put(22, configuration3);
+  EEPROM.put(30, configuration4);
+  EEPROM.put(38, configuration5);
+
 }
 
+// Affiche tout le contenu de l'EEPROM
+void Dump_EEPROM()
+{
 
-/* Versions précédentes
+  Serial.println("Début du dump de l'EEPROM ...");
 
-// Adapte l'intensité en fonction de la luminosité extérieure
-void lightSensor() {
-  int brightness = analogRead(inPin_LightSensor);
-  brightness = map(brightness, 0, 1023, 0, 255);
-
-  strip.setBrightness(brightness);
-
-  strip.show();
+  // Affiche toutes les Valeurs de l'EEPROM
+  for(int i = 0; i < EEPROM.length(); i++)
+  {
+    Serial.print("ADD [");
+    Serial.print(i);
+    Serial.print("] : ");
+    Serial.println(EEPROM.read(i));
+  }
 }
-
-// Adapte la couleur et l'intensité en fonction de l'heure de la journée
-void hourWiFi() {
-  int hour = analogRead(inPin_Hour);
-
-  if (hour >= 10 && hour < 20) { // Journée
-    strip.fill(strip.Color(255, 245, 222)); // Blanc
-    strip.setBrightness(200); // Lumineux
-  }
-
-  else if (hour >= 8 && hour < 10 || hour >= 20 && hour < 23) { // Matinée et soirée
-    strip.fill(strip.Color(255, 125, 0)); // Orange
-    strip.setBrightness(100); // Sombre
-  }
-  
-  else { // Nuit
-      strip.clear(); // Eteint
-  }
-  */
