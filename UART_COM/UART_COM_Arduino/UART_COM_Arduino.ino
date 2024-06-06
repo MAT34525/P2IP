@@ -12,6 +12,8 @@ Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUM_LEDS, pinOutLampe, NEO_GRBW + NE
 #define pinInESP 13
 
 // Encodeur
+#include <Encoder.h>
+
 #define pinInBoutton 2 // SW    (Bouton)
 #define pinInRotation 3 // DT
 #define pinInSensRotation 4 // CLK
@@ -19,6 +21,16 @@ int positionEncodeur = 0;
 int derniereRotation;
 int nouvelleRotation;
 bool sensRotation;
+
+// Ecran OLED
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+#define OLED_WIDTH 128 // OLED display width,  in pixels
+#define OLED_HEIGHT 32 // OLED display height, in pixels
+
+Adafruit_SSD1306 display(OLED_WIDTH, OLED_HEIGHT, &Wire, -1);
 
 // Configuration
 #include <EEPROM.h>
@@ -72,6 +84,15 @@ void setup()
   // On charge les configurations depuis l'EEPROM
   Chargement_EEPROM();
 
+  // Initialisation de l'écran OLED
+  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+
+  display.clearDisplay();
+  display.display();
+
+  display.setTextColor(WHITE);
+
+  // Console
   Serial.begin(9600);
 }
 

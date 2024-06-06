@@ -28,8 +28,8 @@ struct Configuration
   byte bleu;
 };
 
-int luminositeMin = 0;
-int luminositeMax = 0;
+byte luminositeMin = 0;
+byte luminositeMax = 0;
 
 Heure heureDebutActivite;
 Heure heureFinActivite;
@@ -40,6 +40,12 @@ Configuration configuration3;
 Configuration configuration4;
 Configuration configuration5;
 
+Configuration *  Configs = new Configuration[5];
+
+// Configuration menus
+int delaiRafraichissement = 100;
+int delaiPression = 200;
+
 // declare an SSD1306 display object connected to I2C
 Adafruit_SSD1306 display(OLED_WIDTH, OLED_HEIGHT, &Wire, -1);
 
@@ -47,15 +53,22 @@ Encoder myEnc(pinInSensRotation, pinInRotation);
 
 void setup() {
   Serial.begin(9600);
+
+  Configs[0] = configuration1;
+  Configs[1] = configuration2; 
+  Configs[2] = configuration3; 
+  Configs[3] = configuration4; 
+  Configs[4] = configuration5; 
+
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+
   display.clearDisplay();
   display.display();
+
   display.setTextColor(WHITE);
 }
 
 void loop() {
-
-  Serial.println("Yeet");
 
   if(LireBoutton())
   {
@@ -74,24 +87,55 @@ void loop() {
   delay(100);
 }
 
-void AffichageSelectionHeure(int * heure, int * minute)
+byte AffichageSelectionAvecSurlignage(String nom, int min, int max, int ligne, int colonneSelection)
 {
+  byte valeurSelectionnee = min;
+
+  Serial.println("> [+] Debut de selection " + nom);     
+  display.setTextColor(BLACK);
+
+  // Selection de l'heure
+  while(1)
+  {
+    delay(delaiPression);
+
+    // Surlignage en blanc de la zone de saisie
+    display.fillRect(colonneSelection - 4, ligne * 10, 40 , 10, WHITE);
+
+    // Ecrire la nouvelle valeur
+    display.setCursor(colonneSelection, ligne * 10); 
+    display.println(valeurSelectionnee);
+    valeurSelectionnee = SelectionMenu(myEnc.read(), max, min);    
+
+    if(LireBoutton())
+    {
+      Serial.println("> [-] Fin de selection " + nom);
+      display.setTextColor(WHITE); // On remet la couleur du texte en blanc avant de quitter
+      return valeurSelectionnee;
+    }
+
+    display.display();
+  }
+}
+
+void AffichageSelectionHeure(byte * heure, byte * minute)
+{
+  Serial.println("[+] Selection Heure");
+
   int selection = 0;
   int estSelectionne = 0;
-  int heureSaisie = 0;
-  int minuteSaisie = 0; 
-
-  delay(100);
+  
+  byte heureSaisie = 0;
+  byte minuteSaisie = 0; 
 
   while(1)
   {
+    delay(delaiRafraichissement);
+
     selection = SelectionMenu(myEnc.read(), 3, 0);
     estSelectionne = LireBoutton();
 
     display.clearDisplay();
-
-    display.setTextSize(1);
-    display.setTextColor(WHITE);
 
     display.setCursor(20, 0); 
     display.println("Heure");
@@ -113,97 +157,46 @@ void AffichageSelectionHeure(int * heure, int * minute)
 
     if(estSelectionne)
     {
-
       if(selection == 0)
       { 
-        Serial.println("Saisie Heure");       
-
-        // Selection de l'heure
-        while(1)
-        {
-          delay(50);
-
-          // Effacer l'ancienne valeur
-          display.fillRect(56, 0, 40 , 10, WHITE);
-
-          // Ecrire la nouvelle valeur
-          display.setTextColor(BLACK);
-          display.setCursor(60, 0); 
-          display.println(heureSaisie);
-          heureSaisie = SelectionMenu(myEnc.read(), 24, 0);
-
-          display.display();
-
-          if(LireBoutton())
-          {
-            Serial.println("Sortir Saisie Heure");
-            break;
-          }
-        }
+        heureSaisie = AffichageSelectionAvecSurlignage("Heure", 0, 24, selection, 60);
       }
       else if(selection == 1)
       {
-        Serial.println("Saisie Minutes");
-
-        // Selection de l'heure
-        while(1)
-        {
-          delay(50);
-
-          // Effacer l'ancienne valeur
-          display.fillRect(56, 10,  40, 10, WHITE);
-
-          // Ecrire la nouvelle valeur
-          display.setTextColor(BLACK);
-          display.setCursor(60, 10); 
-          display.println(minuteSaisie);
-          minuteSaisie = SelectionMenu(myEnc.read(), 60, 0);
-
-          display.display();
-
-          if(LireBoutton())
-          {
-            Serial.println("Sortir Saisie Minutes");
-            break;
-          }
-        }
+        minuteSaisie = AffichageSelectionAvecSurlignage("Minute", 0, 60, selection, 60);
       }
       else
       {
+        Serial.println("[-] Selection Heure");
         *heure = heureSaisie;
         *minute = minuteSaisie;
-        return;
+        break;
       }
-
     }
 
     display.display();
-
-    delay(100);
   }
-
 }
 
-void AffichageSelectionCouleur(int * rouge, int * vert, int * bleu)
+void AffichageSelectionCouleur(byte * rouge, byte * vert, byte * bleu)
 {
+  Serial.println("[+] Selection Couleur");
+
   int selection = 0;
   int estSelectionne = 0;
 
-  int rougeSaisie = 0;
-  int vertSaisie = 0; 
-  int bleuSaisie = 0; 
-
-   delay(100);
+  byte rougeSaisie = 0;
+  byte vertSaisie = 0; 
+  byte bleuSaisie = 0; 
 
   while(1)
   {
+    delay(delaiRafraichissement);
+
     selection = SelectionMenu(myEnc.read(), 4, 0);
     estSelectionne = LireBoutton();
 
     display.clearDisplay();
-
-    display.setTextSize(1);
-    display.setTextColor(WHITE);
 
     // Affichage premiere section
     if(selection < 3)
@@ -239,137 +232,52 @@ void AffichageSelectionCouleur(int * rouge, int * vert, int * bleu)
       display.println(">");
     }
 
-    display.setCursor(2, selection * 10); 
-    display.println(">");
-
     if(estSelectionne)
     {
-
       if(selection == 0)
-      { 
-        delay(100);
-
-        Serial.println("Saisie Rouge");       
-
-        // Selection de l'heure
-        while(1)
-        {
-          delay(50);
-
-          // Effacer l'ancienne valeur
-          display.fillRect(56, 0, 40 , 10, WHITE);
-
-          // Ecrire la nouvelle valeur
-          display.setTextColor(BLACK);
-          display.setCursor(60, 0); 
-          display.println(rougeSaisie);
-          rougeSaisie = SelectionMenu(myEnc.read(), 256, 0);
-
-          display.display();
-
-          if(LireBoutton())
-          {
-            Serial.println("Sortir Saisie Rouge");
-            break;
-          }
-        }
+      {  
+        rougeSaisie = AffichageSelectionAvecSurlignage("Rouge", 0, 256, selection, 60);
       }
       else if(selection == 1)
       {
-        Serial.println("Saisie Vert");
-
-        delay(100);
-
-        // Selection de l'heure
-        while(1)
-        {
-          delay(50);
-
-          // Effacer l'ancienne valeur
-          display.fillRect(56, 10,  40, 10, WHITE);
-
-          // Ecrire la nouvelle valeur
-          display.setTextColor(BLACK);
-          display.setCursor(60, 10); 
-          display.println(vertSaisie);
-          vertSaisie = SelectionMenu(myEnc.read(), 256, 0);
-
-          display.display();
-
-          if(LireBoutton())
-          {
-            Serial.println("Sortir Saisie Vert");
-            break;
-          }
-        }
+        vertSaisie = AffichageSelectionAvecSurlignage("Vert", 0, 256, selection, 60);
       }
       else if(selection == 2)
       {
-        delay(100);
-
-        Serial.println("Saisie Bleu");
-
-        // Selection de l'heure
-        while(1)
-        {
-          delay(50);
-
-          // Effacer l'ancienne valeur
-          display.fillRect(56, 20,  40, 10, WHITE);
-
-          // Ecrire la nouvelle valeur
-          display.setTextColor(BLACK);
-          display.setCursor(60, 20); 
-          display.println(bleuSaisie);
-          bleuSaisie = SelectionMenu(myEnc.read(), 256, 0);
-
-          display.display();
-
-          if(LireBoutton())
-          {
-            Serial.println("Sortir Saisie Bleu");
-            break;
-          }
-        }
+        bleuSaisie = AffichageSelectionAvecSurlignage("Bleu", 0, 256, selection, 60);
       }
       else
       {
-        Serial.println("Sortie");
+        Serial.println("[-] Selection Couleur");
         *rouge = rougeSaisie;
         *vert = vertSaisie;
         *bleu = bleuSaisie;
-        return;
+        break;
       }
-
-      selection = 0;
-
     }
 
     display.display();
-
-    delay(100);
   }
 
 }
 
-void AffichageSelectionLuminosite(int * luminosite)
+void AffichageSelectionLuminosite(byte * luminosite)
 {
+  Serial.println("[+] Selection Luminosite");
+
   int selection = 0;
   int estSelectionne = 0;
 
-  int luminositeSaisie = 0;
-
-   delay(100);
+  byte luminositeSaisie = 0;
 
   while(1)
   {
+    delay(delaiRafraichissement);
+
     selection = SelectionMenu(myEnc.read(), 2, 0);
     estSelectionne = LireBoutton();
 
     display.clearDisplay();
-
-    display.setTextSize(1);
-    display.setTextColor(WHITE);
 
     display.setCursor(20, 0); 
     display.println("Luminosite");
@@ -388,93 +296,62 @@ void AffichageSelectionLuminosite(int * luminosite)
 
       if(selection == 0)
       { 
-        Serial.println("Saisie Luminosite");       
-
-        // Selection de l'heure
-        while(1)
-        {
-          delay(50);
-
-          // Effacer l'ancienne valeur
-          display.fillRect(86, 0, 40 , 10, WHITE);
-
-          // Ecrire la nouvelle valeur
-          display.setTextColor(BLACK);
-          display.setCursor(90, 0); 
-          display.println(luminositeSaisie);
-          luminositeSaisie = SelectionMenu(myEnc.read(), 256, 0);
-
-          display.display();
-
-          if(LireBoutton())
-          {
-            Serial.println("Sortir Saisie Luminosite");
-            break;
-          }
-        }
+        luminositeSaisie = AffichageSelectionAvecSurlignage("Luminosité", 0, 256, selection, 90);
       }
       else
       {
+        Serial.println("[-] Selection Luminosite");
         *luminosite = luminositeSaisie;
-        return;
+        break;
       }
-
     }
 
     display.display();
-
-    delay(100);
   }
 
 }
 
 void AffichageSelectionActivite()
 {
+  Serial.println("[+] Menu Activite");
+
   int selection = 0;
   int estSelectionne = 0;
-  
-  int heureDebut = 0;
-  int minuteDebut = 0;
-  int heureFin = 0;
-  int minuteFin = 0;
-
-  delay(100);
 
   while(1)
   {
+    delay(delaiRafraichissement);
+
     selection = SelectionMenu(myEnc.read(), 3, 0);
     estSelectionne = LireBoutton();
 
     display.clearDisplay();
-
-    display.setTextSize(1);
-    display.setTextColor(WHITE);
 
     /////////: Heure Debut
     display.setCursor(20, 0); 
     display.println("Debut");
 
     display.setCursor(60, 0); 
-    display.println(heureDebut);
+    display.println(heureDebutActivite.heure);
 
     display.setCursor(70, 0); 
     display.println(":");
 
     display.setCursor(80, 0); 
-    display.println(minuteDebut);
+    display.println(heureDebutActivite.minute);
 
     //////// Heure Fin
     display.setCursor(20, 10); 
     display.println("Fin");
 
     display.setCursor(60, 10); 
-    display.println(heureFin);
+    display.println(heureFinActivite.heure);
 
     display.setCursor(70, 10); 
     display.println(":");
 
     display.setCursor(80, 10); 
-    display.println(minuteFin);
+    display.println(heureFinActivite.minute);
 
     //////// Sortie
     display.setCursor(20, 20); 
@@ -485,66 +362,54 @@ void AffichageSelectionActivite()
 
     if(estSelectionne)
     {
-
       if(selection == 0)
       { 
-        Serial.println("Saisie Debut");
-
-        AffichageSelectionHeure(&heureDebut, &minuteDebut);
-        
+        AffichageSelectionHeure(&heureDebutActivite.heure, &heureDebutActivite.minute);
       }
       else if(selection == 1)
       {
-        Serial.println("Saisie Fin");
-
-        AffichageSelectionHeure(&heureFin, &minuteFin);
+        AffichageSelectionHeure(&heureFinActivite.heure, &heureFinActivite.minute);
       }
       else
       {
-        return;
+        Serial.println("[-] Menu Activite");
+        break;
       }
 
     }
 
     display.display();
-
-    delay(100);
   }
 }
 
 void AffichageSelectionIntensite()
 {
+  Serial.println("[+] Menu Intensite");
   int selection = 0;
   int estSelectionne = 0;
-  
-  int intensiteMax = 0;
-  int intensiteMin = 0;
-
-  delay(100);
 
   while(1)
   {
+    delay(delaiRafraichissement);
+
     selection = SelectionMenu(myEnc.read(), 3, 0);
     estSelectionne = LireBoutton();
 
     display.clearDisplay();
 
-    display.setTextSize(1);
-    display.setTextColor(WHITE);
-
-    /////////: Lum Max
+    //////// Lum Max
     display.setCursor(20, 0); 
     display.println("Max");
 
     display.setCursor(60, 0); 
-    display.println(intensiteMax);
+    display.println(luminositeMax);
 
     //////// Lum Min
     display.setCursor(20, 10); 
     display.println("Min");
 
     display.setCursor(60, 10); 
-    display.println(intensiteMin);
+    display.println(luminositeMin);
 
     //////// Sortie
     display.setCursor(20, 20); 
@@ -555,69 +420,59 @@ void AffichageSelectionIntensite()
 
     if(estSelectionne)
     {
-
       if(selection == 0)
       { 
-        Serial.println("Saisie Debut");
-
-        AffichageSelectionLuminosite(&intensiteMax);
-        
+        AffichageSelectionLuminosite(&luminositeMax);
       }
       else if(selection == 1)
       {
-        Serial.println("Saisie Fin");
-
-        AffichageSelectionLuminosite(&intensiteMin);
+        AffichageSelectionLuminosite(&luminositeMin);
 
         // On a impérativement min <= max donc régualarisation si nécessaire
-        if(intensiteMin > intensiteMax)
+        if(luminositeMin > luminositeMax)
         {
-          intensiteMin = intensiteMax;
+          luminositeMin = luminositeMax;
         }
       }
       else
       {
-        return;
+        Serial.println("[-] Menu Intensite");
+        break;
       }
-
     }
 
     display.display();
-
-    delay(100);
   }
 
 }
 
-// Peut etre retrourner un Strcut de configuration
 void AffichageSelectionConfiguration(int nbConfiguration)
 {
-  
+  Serial.print("[+] Menu Configuration ");
+  Serial.println(nbConfiguration);
+
   int selection = 0;
   int estSelectionne = 0;
 
-  int heureDebut = 0;
-  int minuteDebut = 0;
-  int heureFin = 0;
-  int minuteFin = 0;
+  byte heureDebut = 0;
+  byte minuteDebut = 0;
+  byte heureFin = 0;
+  byte minuteFin = 0;
 
-  int intensite = 0;
+  byte intensite = 0;
 
-  int rougeSaisie = 0;
-  int vertSaisie = 0;
-  int bleuSaisie = 0; 
+  byte rougeSaisie = 0;
+  byte vertSaisie = 0;
+  byte bleuSaisie = 0; 
 
   while(1)
   {
-    delay(100);
+    delay(delaiRafraichissement);
 
     selection = SelectionMenu(myEnc.read(), 5, 0);
     estSelectionne = LireBoutton();
 
     display.clearDisplay();
-
-    display.setTextSize(1);
-    display.setTextColor(WHITE);
 
     // Affichage premiere section
     if(selection < 3)
@@ -627,37 +482,38 @@ void AffichageSelectionConfiguration(int nbConfiguration)
       display.println("Debut");
 
       display.setCursor(60, 0); 
-      display.println(heureDebut);
+      display.println(Configs[nbConfiguration].heureDebut.heure);
 
       display.setCursor(70, 0); 
       display.println(":");
 
       display.setCursor(80, 0); 
-      display.println(minuteDebut);
+      display.println(Configs[nbConfiguration].heureDebut.minute);
 
       //////// Heure Fin
       display.setCursor(20, 10); 
       display.println("Fin");
 
       display.setCursor(60, 10); 
-      display.println(heureFin);
+      display.println(Configs[nbConfiguration].heureFin.heure);
 
       display.setCursor(70, 10); 
       display.println(":");
 
       display.setCursor(80, 10); 
-      display.println(minuteFin);
+      display.println(Configs[nbConfiguration].heureFin.minute);
 
-      /////////: Lum Max
+      ///////// Luminosite
       display.setCursor(20, 20); 
       display.println("Luminosite");
 
-      display.setCursor(60, 20); 
-      display.println(intensite);
+      display.setCursor(90, 20); 
+      display.println(Configs[nbConfiguration].luminosite);
 
       display.setCursor(2, selection * 10); 
       display.println(">");
     }
+
     // Affichage deuxieme section
     else
     {
@@ -669,19 +525,19 @@ void AffichageSelectionConfiguration(int nbConfiguration)
       display.println("(");
 
       display.setCursor(50, 0); 
-      display.println(rougeSaisie);
+      display.println(Configs[nbConfiguration].rouge);
 
       display.setCursor(65, 0); 
       display.println(",");
 
       display.setCursor(70, 0); 
-      display.println(vertSaisie);
+      display.println(Configs[nbConfiguration].vert);
 
       display.setCursor(85, 0); 
       display.println(",");
 
       display.setCursor(90, 0); 
-      display.println(bleuSaisie);
+      display.println(Configs[nbConfiguration].bleu);
 
       display.setCursor(105, 0); 
       display.println(")");
@@ -696,7 +552,6 @@ void AffichageSelectionConfiguration(int nbConfiguration)
 
     if(estSelectionne)
     {
-
       if(selection == 0)
       { 
         AffichageSelectionHeure(&heureDebut, &minuteDebut);
@@ -716,106 +571,43 @@ void AffichageSelectionConfiguration(int nbConfiguration)
       }
       else
       {
-        switch(nbConfiguration)
-        {
-          case 1:
+        // Mise a jour de la configuration associée
+        Configs[nbConfiguration].heureDebut.heure = heureDebut;
+        Configs[nbConfiguration].heureDebut.minute = minuteDebut;
+        Configs[nbConfiguration].heureFin.heure = heureDebut;
+        Configs[nbConfiguration].heureFin.minute = minuteDebut;
+        Configs[nbConfiguration].luminosite = intensite;
+        Configs[nbConfiguration].rouge = rougeSaisie;
+        Configs[nbConfiguration].vert = vertSaisie;
+        Configs[nbConfiguration].bleu = bleuSaisie;
 
-            Serial.println("Configuration 1 mise à jour");
-            configuration1.heureDebut.heure = heureDebut;
-            configuration1.heureDebut.minute = minuteDebut;
-
-            configuration1.heureFin.heure = heureDebut;
-            configuration1.heureFin.minute = minuteDebut;
-
-            configuration1.luminosite = intensite;
-
-            configuration1.rouge = rougeSaisie;
-            configuration1.vert = vertSaisie;
-            configuration1.bleu = bleuSaisie;
-
-            break;
-
-          case 2:
-            Serial.println("Configuration 2 mise à jour");
-            configuration2.heureDebut.heure = heureDebut;
-            configuration2.heureDebut.minute = minuteDebut;
-            configuration2.heureFin.heure = heureDebut;
-            configuration2.heureFin.minute = minuteDebut;
-            configuration2.luminosite = intensite;
-            configuration2.rouge = rougeSaisie;
-            configuration2.vert = vertSaisie;
-            configuration2.bleu = bleuSaisie;
-
-            break;
-
-          case 3:
-            Serial.println("Configuration 3 mise à jour");
-            configuration3.heureDebut.heure = heureDebut;
-            configuration3.heureDebut.minute = minuteDebut;
-            configuration3.heureFin.heure = heureDebut;
-            configuration3.heureFin.minute = minuteDebut;
-            configuration3.luminosite = intensite;
-            configuration3.rouge = rougeSaisie;
-            configuration3.vert = vertSaisie;
-            configuration3.bleu = bleuSaisie;
-
-            break;
-
-          case 4:
-            Serial.println("Configuration 4 mise à jour");
-            configuration4.heureDebut.heure = heureDebut;
-            configuration4.heureDebut.minute = minuteDebut;
-            configuration4.heureFin.heure = heureDebut;
-            configuration4.heureFin.minute = minuteDebut;
-            configuration4.luminosite = intensite;
-            configuration4.rouge = rougeSaisie;
-            configuration4.vert = vertSaisie;
-            configuration4.bleu = bleuSaisie;
-
-            break;
-
-          case 5:
-            Serial.println("Configuration 5 mise à jour");
-            configuration5.heureDebut.heure = heureDebut;
-            configuration5.heureDebut.minute = minuteDebut;
-            configuration5.heureFin.heure = heureDebut;
-            configuration5.heureFin.minute = minuteDebut;
-            configuration5.luminosite = intensite;
-            configuration5.rouge = rougeSaisie;
-            configuration5.vert = vertSaisie;
-            configuration5.bleu = bleuSaisie;
-
-            break;
-        }
-        return;
+        Serial.print("[+] Menu Configuration ");
+        Serial.println(nbConfiguration);
+        break;
       }
 
       selection = 0;
-
     }
 
     display.display();
-
-    delay(100);
   }
 }
 
 void MenuPrincipal()
 {
-  Serial.println("Entree dans le menu principal");
+  Serial.println("[+] Menu Principal");
   
   int selection = 0;
   int estSelectionne = 0;
 
   while(1)
   {
+    delay(delaiRafraichissement);
+
     selection = SelectionMenu(myEnc.read(), 8, 0);
     estSelectionne = LireBoutton();
 
     display.clearDisplay();
-
-    display.setTextSize(1);
-    display.setTextColor(WHITE);
 
     // Affichage premiere section
     if(selection < 3)
@@ -847,6 +639,7 @@ void MenuPrincipal()
       display.setCursor(2, (selection - 3) * 10); 
       display.println(">");
     }
+    // Affichage troisieme section
     else
     {
       display.setCursor(20, 0); 
@@ -859,9 +652,9 @@ void MenuPrincipal()
       display.println(">");
     }
 
+    // Acces aux sous menus
     if(estSelectionne)
     {
-
       if(selection == 0)
       {
         AffichageSelectionActivite();
@@ -893,16 +686,12 @@ void MenuPrincipal()
       else
       {
         // Sauvegarde EEPROM
-
-        Serial.println("Sortie du menu principal");
-
+        Serial.println("[-] Menu Principal");
         break;
       }
     }
 
     display.display();
-
-    delay(100);
   }
 }
 
@@ -918,6 +707,7 @@ int SelectionMenu(int val, int taille, int min)
     val2 = val;
   }
 
+  // Gere les différences modulos positifs / négatifs (fait en sorte que les valeurs bouclent)
   if(menu_index < min)
   {
     if(menu_index%taille == min)
