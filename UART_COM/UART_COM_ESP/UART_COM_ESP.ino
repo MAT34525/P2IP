@@ -6,9 +6,16 @@ const char* password = "azertyuiop";
 
 const char* ntpServer = "pool.ntp.org";
 const long  gmtOffset_sec = 3600 * 1;
-const int   daylightOffset_sec = 3600 * 0;
+const int   daylightOffset_sec = 3600 * 1;
 
 const int outPinTime = 5;
+const int inPinTime = 2; 
+
+int seconde = 0;
+int heure = 0;
+int minute = 0;
+
+int iter = 0;
 
 void setup() 
 {
@@ -34,23 +41,84 @@ void setup()
 
   // Port de sortie de l'heure
   pinMode(outPinTime, OUTPUT);
+  pinMode(inPinTime, INPUT);
+
+  // Dès qu'on a accès à l'heure, on effectue une unique requête pour définir le temps
+
+  struct tm currentTime = getTime();
+
+  heure = currentTime.tm_hour;
+  minute = currentTime.tm_min;
+  seconde  = currentTime.tm_sec;
+
+  Serial.print("Heure d'initialisation : ");
+  Serial.print(heure);
+  Serial.print(":");
+  Serial.print(minute);
+  Serial.print(":");
+  Serial.println(seconde);
 }
 
 void loop() {
 
-  struct tm currentTime = getTime();
-  int hour = currentTime.tm_hour;
+  // Envoie l'heure si une demande est effectuée
+  if(digitalRead(inPinTime) == 1)
+  {
+    Serial.println("Demande Reçue !");
 
-  Serial.print("Heure actuelle : ");
-  Serial.print(hour);
-  Serial.print(":");
-  Serial.print(currentTime.tm_min);
-  Serial.print(":");
-  Serial.println(currentTime.tm_sec);
+    TransferByte(heure, outPinTime);
 
-  TransferByte(hour, outPinTime);
+    TransferByte(minute, outPinTime);
 
-  delay(2000);
+    Serial.print("Heure transmise : ");
+    Serial.print(heure);
+    Serial.print(":");
+    Serial.print(minute);
+    Serial.print(":");
+    Serial.println(seconde);
+
+  }
+  // Met à jour l'heure (on se sert de l'ESP comme d'une horloge)
+  else
+  {
+    delay(1000);
+
+    seconde ++;
+    if (seconde > 60)
+    {
+      seconde = 0;
+      minute ++;
+    }
+
+    if (minute > 60)
+    {
+      minute = 0;
+      heure ++;
+    }
+
+    if (heure > 23)
+    {
+      heure = 0;
+    }
+
+    if(iter >= 5 * 60);
+    {
+      tm currentTime = getTime();
+
+      heure = currentTime.tm_hour;
+      minute = currentTime.tm_min;
+      seconde  = currentTime.tm_sec;
+
+      Serial.print("Heure actualisée : ");
+      Serial.print(heure);
+      Serial.print(":");
+      Serial.print(minute);
+      Serial.print(":");
+      Serial.println(seconde);
+    }
+
+    iter++;
+  }
 }
 
 struct tm getTime() 
@@ -68,7 +136,6 @@ struct tm getTime()
 void TransferByte(int num, int pin)
 {
   // Nécessite la configuration du pin en OUTPUT
-  Serial.println("Début de la transmission ...");
 
   char binary[9] = {0}; // Message en binaire
 
@@ -90,10 +157,6 @@ void TransferByte(int num, int pin)
     delay(50); // Durée de la transmission
 
   }
-
-  Serial.println("Fin de la transmission ...");
-  Serial.print("Valeur transmise : ");
-  Serial.println(num - 128);
 
   digitalWrite(pin, LOW); // Fin de la transmission
 

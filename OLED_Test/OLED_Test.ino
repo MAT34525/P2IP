@@ -65,6 +65,7 @@ void setup() {
   display.clearDisplay();
   display.display();
 
+  display.setTextSize(1);
   display.setTextColor(WHITE);
 }
 
@@ -72,8 +73,6 @@ void loop() {
 
   if(LireBoutton())
   {
-    delay(100);
-
     MenuPrincipal();
     
     display.clearDisplay();
