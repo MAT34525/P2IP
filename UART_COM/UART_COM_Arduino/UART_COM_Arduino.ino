@@ -165,6 +165,7 @@ void loop()
 
     Decision(mouvement, luminosite, &couleur, &intensite ); // L'heure est une variable globale
 
+    // Utiliser une méthode pour lisser la transition
     ConfigurerAnneau(couleur);
 
     strip.setBrightness(intensite);
@@ -176,23 +177,65 @@ void loop()
 
 void Decision(bool &mvt, int &lum, uint32_t *couleur, int *intensite)
 {
-  if(estDansIntervalle())
+  // Autres parametres
+  bool nocturne = true;
+
+  // Priorité aux configurations
+  for(int nConfig = 0; nConfig < 5; nConfig ++)
   {
-    *couleur = strip.Color(255, 255, 255);
-    *intensite = 255;
+    if(estDansIntervalle(Configs[nConfig].heureDebut, Configs[nConfig].heureFin))
+    {
+      *couleur = strip.Color(Configs[nConfig].rouge, Configs[nConfig].vert, Configs[nConfig].bleu);
+      *intensite = (luminositeMax < Configs[nConfig].luminosite)? luminositeMax : Configs[nConfig].luminosite;
+      return;
+    }
+  }
+
+  // COnfiguration par défaut
+  if(estDansIntervalle(heureDebutActivite, heureFinActivite))
+  {
+    
+
+    if(lum < 300)
+    {
+      *couleur = strip.Color(255, 255, 255);
+      *intensite = luminositeMax;
+    }
+    else if (lum < 700)
+    {
+      *couleur = strip.Color(255, 255, 255);
+
+      int step = (luminositeMax - (700 - 300)) /1024; // A verifier, transition de 0 a 255 selon échelon
+
+      *intensite = round(luminositeMax * step) ;
+    }
+    else // Trop lumineux, éteint
+    {
+      *couleur = strip.Color(0, 0, 0);
+      *intensite = 0;
+    }
+
   }
   else
   {
-    *couleur = strip.Color(255, 0, 0);
-    *intensite = 50;
+    if(nocturne && mvt) // Lumiere rouge
+    {
+      *couleur = strip.Color(255, 0, 0);
+      *intensite = (luminositeMin != 0)? luminositeMin : luminositeMax / 4;
+    }
+    else // Eteint
+    {
+      *couleur = strip.Color(0, 0, 0);
+      *intensite = 0;
+    }
   }
 }
 
-bool estDansIntervalle() 
+bool estDansIntervalle(Heure &heureDebut, Heure &heureFin) 
 {
     // Convertir les heures en minutes pour une comparaison facile
-    int debutEnMinutes = heureDebutActivite.heure * 60 + heureDebutActivite.minute;
-    int finEnMinutes = heureFinActivite.heure * 60 + heureFinActivite.minute;
+    int debutEnMinutes = heureDebut.heure * 60 +heureDebut.minute;
+    int finEnMinutes = heureFin.heure * 60 + heureFin.minute;
     int actuelleEnMinutes = heureActuelle.heure * 60 + heureActuelle.minute;
 
     if (debutEnMinutes <= finEnMinutes) {
