@@ -1,4 +1,4 @@
-// Aneau LED
+// Anneau LED
 #include <Adafruit_NeoPixel.h>
 
 #define NUM_LEDS 16

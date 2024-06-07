@@ -307,7 +307,6 @@ void AffichageSelectionLuminosite(byte * luminosite)
 
     display.display();
   }
-
 }
 
 void AffichageSelectionActivite()
