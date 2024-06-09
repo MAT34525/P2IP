@@ -6,8 +6,8 @@ const char* ssid = "ALCT";
 const char* password = "azertyuiop";
 
 const char* ntpServer = "pool.ntp.org";
-const long  gmtOffset_sec = 3600 * 1;
-const int   daylightOffset_sec = 3600 * 1;
+const long  gmtOffset_sec = 3600 * 2;
+const int   daylightOffset_sec = 0;
 
 const int outPinTime = 5;
 const int inPinTime = 2; 
@@ -16,7 +16,7 @@ int seconde = 0;
 int heure = 0;
 int minute = 0;
 
-int iter = 0;
+int compteur;
 
 void setup() 
 {
@@ -58,6 +58,8 @@ void setup()
   Serial.print(minute);
   Serial.print(":");
   Serial.println(seconde);
+
+  compteur = 0;
 }
 
 void loop() {
@@ -82,6 +84,8 @@ void loop() {
   // Met à jour l'heure (on se sert de l'ESP comme d'une horloge)
   else
   {
+    compteur = compteur + 1;
+
     delay(1000);
 
     seconde ++;
@@ -102,9 +106,10 @@ void loop() {
       heure = 0;
     }
 
-    if(iter >= 5 * 60);
+    if(compteur > 60 * 5) // Actualiser toutes les 5 minutes
     {
-      tm currentTime = getTime();
+
+      struct tm currentTime = getTime();
 
       heure = currentTime.tm_hour;
       minute = currentTime.tm_min;
@@ -116,9 +121,10 @@ void loop() {
       Serial.print(minute);
       Serial.print(":");
       Serial.println(seconde);
-    }
 
-    iter++;
+      compteur  = 0 ;
+    }
+  
   }
 }
 

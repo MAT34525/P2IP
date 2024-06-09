@@ -35,8 +35,8 @@ Encoder myEnc(pinInSensRotation, pinInRotation);
 
 Adafruit_SSD1306 display(OLED_WIDTH, OLED_HEIGHT, &Wire, -1);
 
-int delaiRafraichissement = 200;
-int delaiPression = 50;
+int delaiRafraichissement = 100;
+int delaiPression = 70;
 
 // Configuration
 #include <EEPROM.h>
@@ -63,13 +63,10 @@ byte luminositeMax = 0;
 Heure heureDebutActivite;
 Heure heureFinActivite;
 
-Configuration configuration1;
-Configuration configuration2;
-Configuration configuration3;
-Configuration configuration4;
-Configuration configuration5;
+Configuration * Configs = new Configuration[5];
 
-Configuration *  Configs = new Configuration[5];
+bool estNocturne;
+byte configurationParDefaut;
 
 // Parametres globaux
 Heure heureActuelle;
@@ -101,12 +98,6 @@ void setup()
   // On charge les configurations depuis l'EEPROM
   Chargement_EEPROM();
 
-  Configs[0] = configuration1;
-  Configs[1] = configuration2; 
-  Configs[2] = configuration3; 
-  Configs[3] = configuration4; 
-  Configs[4] = configuration5; 
-
   // Initialisation de l'écran OLED
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
 
@@ -130,11 +121,20 @@ void setup()
 
 void loop()
 {
-
   delay(delaiPression);
 
   if(LireBoutton())
   {
+    while(LireBoutton())
+    {
+
+      display.setCursor(20, 10); 
+      display.println("Chargement ...");
+
+      display.display();
+      // On attend que l'utilisateur finisse l'appui du bouton avant de passer au menu 
+    }
+
     // Mise en pause, accès au menu
     MenuPrincipal();
     
@@ -151,7 +151,6 @@ void loop()
 
     bool mouvement = digitalRead(pinInMouvement);
     int luminosite = analogRead(pinInLuminosite);
-
     if(iter >= 500) // Heure actualisée au bout d'un certain temps
     {
       // On actualise l'heure
@@ -166,25 +165,27 @@ void loop()
     Decision(mouvement, luminosite, &couleur, &intensite ); // L'heure est une variable globale
 
     // Utiliser une méthode pour lisser la transition
-    ConfigurerAnneau(couleur);
+    TransitionVersCouleur(couleur, intensite, 2000);
 
     strip.setBrightness(intensite);
 
     iter++;
-
   }
+
 }
 
 void Decision(bool &mvt, int &lum, uint32_t *couleur, int *intensite)
 {
-  // Autres parametres
-  bool nocturne = true;
 
   // Priorité aux configurations
   for(int nConfig = 0; nConfig < 5; nConfig ++)
   {
     if(estDansIntervalle(Configs[nConfig].heureDebut, Configs[nConfig].heureFin))
     {
+      Serial.print("Configuration ");
+      Serial.print(nConfig+1);
+      Serial.println(" utilisée !");
+
       *couleur = strip.Color(Configs[nConfig].rouge, Configs[nConfig].vert, Configs[nConfig].bleu);
       *intensite = (luminositeMax < Configs[nConfig].luminosite)? luminositeMax : Configs[nConfig].luminosite;
       return;
@@ -194,31 +195,29 @@ void Decision(bool &mvt, int &lum, uint32_t *couleur, int *intensite)
   // COnfiguration par défaut
   if(estDansIntervalle(heureDebutActivite, heureFinActivite))
   {
-    
-
-    if(lum < 300)
+    if(lum < 200)
     {
-      *couleur = strip.Color(255, 255, 255);
-      *intensite = luminositeMax;
-    }
-    else if (lum < 700)
-    {
-      *couleur = strip.Color(255, 255, 255);
+      if(configurationParDefaut != 0)
+      {
+        *couleur = strip.Color(Configs[configurationParDefaut-1].rouge,Configs[configurationParDefaut-1].vert, Configs[configurationParDefaut-1].bleu);
+        *intensite = Configs[configurationParDefaut-1].luminosite;
+      }
+      else
+      {
+        *couleur = strip.Color(255, 255, 255);
+        *intensite = luminositeMax;
+      }
 
-      int step = (luminositeMax - (700 - 300)) /1024; // A verifier, transition de 0 a 255 selon échelon
-
-      *intensite = round(luminositeMax * step) ;
     }
     else // Trop lumineux, éteint
     {
       *couleur = strip.Color(0, 0, 0);
       *intensite = 0;
     }
-
   }
   else
   {
-    if(nocturne && mvt) // Lumiere rouge
+    if(estNocturne && mvt) // Lumiere rouge
     {
       *couleur = strip.Color(255, 0, 0);
       *intensite = (luminositeMin != 0)? luminositeMin : luminositeMax / 4;
@@ -265,17 +264,49 @@ bool LireMouvement()
   return etatMouvement;
 }
 
-// Modifie la configuration de l'anneau LED avec un port digital
-bool ConfigurerAnneau(uint32_t couleur)
+// Transitionne l'anneau vers les valeurs passées en paramètres
+void TransitionVersCouleur(uint32_t nouvelleCouleur, int nouvelleLuminosite, int tempsDeTransition) 
 {
-  // Couleur : strip.Color(rouge, vert, bleu, luminosite)
+  // Décomposer la nouvelle couleur en composants R, G et B
+  uint8_t nouveauR = (nouvelleCouleur >> 16) & 0xFF;
+  uint8_t nouveauG = (nouvelleCouleur >> 8) & 0xFF;
+  uint8_t nouveauB = nouvelleCouleur & 0xFF;
+  
+  // Obtenir la couleur actuelle de la première LED (en supposant que toutes les LED ont la même couleur)
+  uint32_t couleurActuelle = strip.getPixelColor(0);
+  uint8_t actuelR = (couleurActuelle >> 16) & 0xFF;
+  uint8_t actuelG = (couleurActuelle >> 8) & 0xFF;
+  uint8_t actuelB = couleurActuelle & 0xFF;
+  
+  // Obtenir la luminosité actuelle
+  int luminositeActuelle = strip.getBrightness();
 
-  for (uint16_t i = 0; i < strip.numPixels(); i++) {
-      
-      strip.setPixelColor(i, couleur);  
+  // Calculer les étapes nécessaires à la transition
+  int etapes = tempsDeTransition / 10;
+  float etapeR = (nouveauR - actuelR) / (float)etapes;
+  float etapeG = (nouveauG - actuelG) / (float)etapes;
+  float etapeB = (nouveauB - actuelB) / (float)etapes;
+  float etapeLuminosite = (nouvelleLuminosite - luminositeActuelle) / (float)etapes;
+
+  for (int i = 0; i <= etapes; i++) {
+    uint8_t r = actuelR + (etapeR * i);
+    uint8_t g = actuelG + (etapeG * i);
+    uint8_t b = actuelB + (etapeB * i);
+    int luminosite = luminositeActuelle + (etapeLuminosite * i);
+
+    // Ajuster les valeurs RGB en fonction de la luminosité
+    r = r * luminosite / 255;
+    g = g * luminosite / 255;
+    b = b * luminosite / 255;
+    
+    uint32_t couleur = strip.Color(r, g, b);
+    
+    for (int j = 0; j < NUM_LEDS; j++) {
+      strip.setPixelColor(j, couleur);
+    }
+    strip.show();
+    delay(10); // Délai pour créer l'effet de transition
   }
-
-  strip.show();
 }
 
 // Lis l'état d'un bouton avec un port digital
@@ -336,13 +367,8 @@ bool SynchronisationESP()
 {
   bool connecte = false;
 
-  strip.clear();
-  for (uint16_t i = 0; i < strip.numPixels(); i++) 
-  {
-    strip.setPixelColor(i, strip.Color(255, 0, 0));
-  }
-
-  strip.show();
+  int i = 0;
+  int moveLed = 0;
 
   while(!connecte)
   {
@@ -353,6 +379,16 @@ bool SynchronisationESP()
 
     while(digitalRead(pinInESP) != 1)
     {
+      // Bouget la led toutes les 20 demandes
+      if(i > 20)
+      {
+        i = 0;
+        moveLed++;
+      }
+
+      strip.clear();
+      strip.setPixelColor(moveLed%NUM_LEDS, strip.Color(255, 0, 0));
+      strip.show();
 
       delay(10);
 
@@ -361,6 +397,7 @@ bool SynchronisationESP()
         heureActuelle.heure = RecevoirByte(pinInESP);
         heureActuelle.minute = RecevoirByte(pinInESP);
       }
+      i++;
     }
 
     digitalWrite(pinOutESP, LOW);
@@ -390,6 +427,8 @@ void Chargement_EEPROM()
   // get(address, data) : autre que des byte
   // read(address) : byte
 
+  Serial.println("Chargement des données de l'EEPROM...");
+
   // Structures de données
   Heure typeHeure;
   Configuration typeConfiguration;
@@ -403,16 +442,23 @@ void Chargement_EEPROM()
   heureFinActivite = EEPROM.get(4, typeHeure);
 
   // Configurations (8 bytes)
-  configuration1 = EEPROM.get(6, typeConfiguration);
-  configuration2 = EEPROM.get(14, typeConfiguration);
-  configuration3 = EEPROM.get(22, typeConfiguration);
-  configuration4 = EEPROM.get(30, typeConfiguration);
-  configuration5 = EEPROM.get(38, typeConfiguration);
+  for(int i = 0; i < 5; i++)
+  {
+    Configs[i] = EEPROM.get(6 + 8 * i, typeConfiguration);
+  }
+
+  // Configuration par défaut & autres
+  estNocturne = EEPROM.read(4 + 2 + 8 * 5);
+  configurationParDefaut = EEPROM.read(4 + 2 + 8 * 5 + 1);
+
+  Serial.println("Données chargées !");
 }
 
 // Sauvegrade la configuration dans l'EEPROM
 void Sauvegarde_EEPROM()
 {
+  Serial.println("Sauvegrade des données dans l'EEPROM...");
+
   // Attention : 100 000 écritures max, on a de la marge
   // https://docs.arduino.cc/learn/built-in-libraries/eeprom/#length
   
@@ -430,13 +476,16 @@ void Sauvegarde_EEPROM()
   EEPROM.put(4, heureFinActivite);
 
   // Configurations (8 bytes)
-  EEPROM.put(6, configuration1);
+  for(int i = 0; i < 5; i++)
+  {
+    EEPROM.put(6 + 8 * i, Configs[i]);
+  }
 
-  EEPROM.put(14, configuration2);
-  EEPROM.put(22, configuration3);
-  EEPROM.put(30, configuration4);
-  EEPROM.put(38, configuration5);
+  // Configuration par défaut & autres
+  EEPROM.update(4 + 2 + 8 * 5, estNocturne);
+  EEPROM.update(4 + 2 + 8 * 5 + 1, configurationParDefaut);
 
+  Serial.println("Données sauvegardées !");
 }
 
 // Affiche tout le contenu de l'EEPROM
@@ -457,9 +506,9 @@ void Dump_EEPROM()
 
 // Affichage OLED ///////////////////////////////////////////////////////////////
 
-byte AffichageSelectionAvecSurlignage(String nom, int min, int max, int ligne, int colonneSelection)
+byte AffichageSelectionAvecSurlignage(String nom, int min, int max, int ligne, int colonneSelection, int valeurInitiale)
 {
-  byte valeurSelectionnee = min;
+  byte valeurSelectionnee = valeurInitiale;
 
   Serial.println("> [+] Debut de selection " + nom);     
   display.setTextColor(BLACK);
@@ -490,13 +539,15 @@ byte AffichageSelectionAvecSurlignage(String nom, int min, int max, int ligne, i
 
 void AffichageSelectionHeure(byte * heure, byte * minute)
 {
+  delay(300);
+
   Serial.println("[+] Selection Heure");
 
   int selection = 0;
   int estSelectionne = 0;
   
-  byte heureSaisie = 0;
-  byte minuteSaisie = 0; 
+  byte heureSaisie = *heure;
+  byte minuteSaisie = *minute; 
 
   while(1)
   {
@@ -529,11 +580,11 @@ void AffichageSelectionHeure(byte * heure, byte * minute)
     {
       if(selection == 0)
       { 
-        heureSaisie = AffichageSelectionAvecSurlignage("Heure", 0, 24, selection, 60);
+        heureSaisie = AffichageSelectionAvecSurlignage("Heure", 0, 24, selection, 60, heureSaisie);
       }
       else if(selection == 1)
       {
-        minuteSaisie = AffichageSelectionAvecSurlignage("Minute", 0, 60, selection, 60);
+        minuteSaisie = AffichageSelectionAvecSurlignage("Minute", 0, 60, selection, 60, minuteSaisie);
       }
       else
       {
@@ -550,14 +601,16 @@ void AffichageSelectionHeure(byte * heure, byte * minute)
 
 void AffichageSelectionCouleur(byte * rouge, byte * vert, byte * bleu)
 {
+  delay(300);
+
   Serial.println("[+] Selection Couleur");
 
   int selection = 0;
   int estSelectionne = 0;
 
-  byte rougeSaisie = 0;
-  byte vertSaisie = 0; 
-  byte bleuSaisie = 0; 
+  byte rougeSaisie = *rouge;
+  byte vertSaisie = *vert; 
+  byte bleuSaisie = *bleu; 
 
   while(1)
   {
@@ -606,15 +659,15 @@ void AffichageSelectionCouleur(byte * rouge, byte * vert, byte * bleu)
     {
       if(selection == 0)
       {  
-        rougeSaisie = AffichageSelectionAvecSurlignage("Rouge", 0, 256, selection, 60);
+        rougeSaisie = AffichageSelectionAvecSurlignage("Rouge", 0, 256, selection, 60, rougeSaisie);
       }
       else if(selection == 1)
       {
-        vertSaisie = AffichageSelectionAvecSurlignage("Vert", 0, 256, selection, 60);
+        vertSaisie = AffichageSelectionAvecSurlignage("Vert", 0, 256, selection, 60, vertSaisie);
       }
       else if(selection == 2)
       {
-        bleuSaisie = AffichageSelectionAvecSurlignage("Bleu", 0, 256, selection, 60);
+        bleuSaisie = AffichageSelectionAvecSurlignage("Bleu", 0, 256, selection, 60, bleuSaisie);
       }
       else
       {
@@ -633,12 +686,14 @@ void AffichageSelectionCouleur(byte * rouge, byte * vert, byte * bleu)
 
 void AffichageSelectionLuminosite(byte * luminosite)
 {
+  delay(300);
+
   Serial.println("[+] Selection Luminosite");
 
   int selection = 0;
   int estSelectionne = 0;
 
-  byte luminositeSaisie = 0;
+  byte luminositeSaisie = *luminosite;
 
   while(1)
   {
@@ -666,7 +721,7 @@ void AffichageSelectionLuminosite(byte * luminosite)
 
       if(selection == 0)
       { 
-        luminositeSaisie = AffichageSelectionAvecSurlignage("Luminosité", 0, 256, selection, 90);
+        luminositeSaisie = AffichageSelectionAvecSurlignage("Luminosité", 0, 256, selection, 90, luminositeSaisie);
       }
       else
       {
@@ -819,21 +874,10 @@ void AffichageSelectionIntensite()
 void AffichageSelectionConfiguration(int nbConfiguration)
 {
   Serial.print("[+] Menu Configuration ");
-  Serial.println(nbConfiguration);
+  Serial.println(nbConfiguration + 1);
 
   int selection = 0;
   int estSelectionne = 0;
-
-  byte heureDebut = 0;
-  byte minuteDebut = 0;
-  byte heureFin = 0;
-  byte minuteFin = 0;
-
-  byte intensite = 0;
-
-  byte rougeSaisie = 0;
-  byte vertSaisie = 0;
-  byte bleuSaisie = 0; 
 
   while(1)
   {
@@ -924,39 +968,167 @@ void AffichageSelectionConfiguration(int nbConfiguration)
     {
       if(selection == 0)
       { 
-        AffichageSelectionHeure(&heureDebut, &minuteDebut);
+        AffichageSelectionHeure(&Configs[nbConfiguration].heureDebut.heure, &Configs[nbConfiguration].heureDebut.minute);
       }
       else if(selection == 1)
       {
-        AffichageSelectionHeure(&heureFin, &minuteFin);
+        AffichageSelectionHeure(&Configs[nbConfiguration].heureFin.heure, &Configs[nbConfiguration].heureFin.minute);
       }
       else if(selection == 2)
       {
-        AffichageSelectionLuminosite(&intensite);
+        AffichageSelectionLuminosite(&Configs[nbConfiguration].luminosite);
       }
       else if(selection == 3)
       {
-        AffichageSelectionCouleur(&rougeSaisie, &vertSaisie, &bleuSaisie);
+        AffichageSelectionCouleur(&Configs[nbConfiguration].rouge, &Configs[nbConfiguration].vert, &Configs[nbConfiguration].bleu);
         
       }
       else
       {
-        // Mise a jour de la configuration associée
-        Configs[nbConfiguration].heureDebut.heure = heureDebut;
-        Configs[nbConfiguration].heureDebut.minute = minuteDebut;
-        Configs[nbConfiguration].heureFin.heure = heureDebut;
-        Configs[nbConfiguration].heureFin.minute = minuteDebut;
-        Configs[nbConfiguration].luminosite = intensite;
-        Configs[nbConfiguration].rouge = rougeSaisie;
-        Configs[nbConfiguration].vert = vertSaisie;
-        Configs[nbConfiguration].bleu = bleuSaisie;
-
         Serial.print("[+] Menu Configuration ");
-        Serial.println(nbConfiguration);
+        Serial.println(nbConfiguration + 1);
         break;
       }
 
       selection = 0;
+    }
+
+    display.display();
+  }
+}
+
+void MenuSelectionConfiguration()
+{
+  Serial.println("[+] Menu Selection Configuration");
+  
+  int selection = 0;
+  int estSelectionne = 0;
+
+  while(1)
+  {
+    delay(delaiRafraichissement);
+
+    selection = SelectionMenu(myEnc.read(), 6, 0);
+    estSelectionne = LireBoutton();
+
+    display.clearDisplay();
+
+    // Affichage premiere section
+    if(selection < 3)
+    {
+      display.setCursor(20, 0); 
+      display.println("Configuration 1");
+
+      display.setCursor(20, 10); 
+      display.println("Configuration 2");
+
+      display.setCursor(20, 20); 
+      display.println("Configuration 3");
+
+      display.setCursor(2, selection * 10); 
+      display.println(">");
+    }
+    // Affichage deuxieme section
+    else
+    {
+      display.setCursor(20, 0); 
+      display.println("Configuration 4");
+
+      display.setCursor(20, 10); 
+      display.println("Configuration 5");
+
+      display.setCursor(20, 20); 
+      display.println("Sortie");
+
+      display.setCursor(2, (selection - 3) * 10); 
+      display.println(">");
+    }
+
+    // Acces aux sous menus
+    if(estSelectionne)
+    {
+      // Attention le numéro des configurations commencent à partir de 0 !!
+      if(selection == 0)
+      {
+        AffichageSelectionConfiguration(0);
+      }
+      else if(selection == 1)
+      {
+        AffichageSelectionConfiguration(1);
+      }
+      else if(selection == 2)
+      {
+        AffichageSelectionConfiguration(2);
+      }
+      else if(selection == 3)
+      {
+        AffichageSelectionConfiguration(3);
+      }
+      else if(selection == 4)
+      {
+        AffichageSelectionConfiguration(4);
+      }
+      else
+      {
+        Serial.println("[-] Menu Selection Configuration");
+        break;
+      }
+    }
+
+    display.display();
+  }
+}
+
+void MenuActualisationHeure()
+{
+  Serial.println("[+] Menu Actualisation Heure");
+  
+  int selection = 1;
+  int estSelectionne = 0;
+
+  while(1)
+  {
+    delay(delaiRafraichissement);
+
+    selection = SelectionMenu(myEnc.read(), 3, 1);
+    estSelectionne = LireBoutton();
+
+    display.clearDisplay();
+
+    display.setCursor(34, 0); 
+    display.println(heureActuelle.heure);
+
+    display.setCursor(64, 0); 
+    display.println(":");
+
+    display.setCursor(94, 0); 
+    display.println(heureActuelle.minute);
+
+    display.setCursor(20, 10); 
+    display.println("Actualiser");
+
+    display.setCursor(20, 20); 
+    display.println("Sortie");
+
+    display.setCursor(2, selection * 10); 
+    display.println(">");
+
+    // Acces aux sous menus
+    if(estSelectionne)
+    {
+      if (selection == 0)
+      {
+        // Affichage Heure
+      }
+      else if (selection == 1)
+      {
+        SynchronisationESP();
+      }
+      else
+      {
+        Serial.println("[-] Menu Actualisation Heure");
+        break;
+      }
     }
 
     display.display();
@@ -974,7 +1146,7 @@ void MenuPrincipal()
   {
     delay(delaiRafraichissement);
 
-    selection = SelectionMenu(myEnc.read(), 8, 0);
+    selection = SelectionMenu(myEnc.read(), 6, 0);
     estSelectionne = LireBoutton();
 
     display.clearDisplay();
@@ -989,36 +1161,24 @@ void MenuPrincipal()
       display.println("Luminosite");
 
       display.setCursor(20, 20); 
-      display.println("Configuration 1");
+      display.println("Configurations");
 
       display.setCursor(2, selection * 10); 
       display.println(">");
     }
     // Affichage deuxieme section
-    else if(selection < 6 && selection >= 3)
-    {
-      display.setCursor(20, 0); 
-      display.println("Configuration 2");
-
-      display.setCursor(20, 10); 
-      display.println("Configuration 3");
-
-      display.setCursor(20, 20); 
-      display.println("Configuration 4");
-
-      display.setCursor(2, (selection - 3) * 10); 
-      display.println(">");
-    }
-    // Affichage troisieme section
     else
     {
       display.setCursor(20, 0); 
-      display.println("Configuration 5");
+      display.println("Defaut");
 
       display.setCursor(20, 10); 
+      display.println("Synchronisation");
+
+      display.setCursor(20, 20); 
       display.println("Sortie");
 
-      display.setCursor(2, (selection - 6) * 10); 
+      display.setCursor(2, (selection - 3) * 10); 
       display.println(">");
     }
 
@@ -1033,30 +1193,80 @@ void MenuPrincipal()
       {
         AffichageSelectionIntensite();
       }
+      // Attention le numéro des configurations commencent à partir de 0 !!
       else if(selection == 2)
       {
-        AffichageSelectionConfiguration(1);
+        MenuSelectionConfiguration();
       }
       else if(selection == 3)
       {
-        AffichageSelectionConfiguration(2);
+        AffichageSelectionDefaut();
       }
       else if(selection == 4)
       {
-        AffichageSelectionConfiguration(3);
-      }
-      else if(selection == 5)
-      {
-        AffichageSelectionConfiguration(4);
-      }
-      else if(selection == 6)
-      {
-        AffichageSelectionConfiguration(5);
+        MenuActualisationHeure();
       }
       else
       {
         Sauvegarde_EEPROM();
         Serial.println("[-] Menu Principal");
+        break;
+      }
+    }
+
+    display.display();
+  }
+}
+
+void AffichageSelectionDefaut()
+{
+  delay(300);
+
+  Serial.println("[+] Selection Defaut");
+
+  int selection = 0;
+  int estSelectionne = 0;
+
+  while(1)
+  {
+    delay(delaiRafraichissement);
+
+    selection = SelectionMenu(myEnc.read(), 3, 0);
+    estSelectionne = LireBoutton();
+
+    display.clearDisplay();
+
+    display.setCursor(20, 0); 
+    display.println("Nocturne");
+
+    display.setCursor(80, 0); 
+    display.println(estNocturne);
+
+    display.setCursor(20, 10); 
+    display.println("Defaut");
+
+    display.setCursor(80, 10); 
+    display.println(configurationParDefaut);
+
+    display.setCursor(20, 20); 
+    display.println("Sortie");
+
+    display.setCursor(2, selection * 10); 
+    display.println(">");
+
+    if(estSelectionne)
+    {
+      if(selection == 0)
+      { 
+        estNocturne = AffichageSelectionAvecSurlignage("Nocturne", 0, 2, selection, 80, estNocturne);
+      }
+      else if(selection == 1)
+      {
+        configurationParDefaut = AffichageSelectionAvecSurlignage("Defaut", 0, 6, selection, 80, configurationParDefaut);
+      }
+      else
+      {
+        Serial.println("[-] Selection Defaut");
         break;
       }
     }
@@ -1096,3 +1306,26 @@ int SelectionMenu(int val, int taille, int min)
 
   return menu_index;
 }
+
+/*
+  Configuration rapide dans l'EEPROM
+  for(int i = 0; i < 5; i++)
+  {
+    Heure heureDebut = {10+i, 0};
+    Heure heureFin = {10+i, 50};
+    Configs[i] = {heureDebut, heureFin, i * 10, i * 10,  i * 10, i * 10 };
+  }
+
+  for(int i = 0; i < 5; i++)
+  {
+    Serial.print("Config");
+    Serial.println(i);
+    Serial.println(Configs[i].luminosite);
+    Serial.println(Configs[i].rouge);
+    Serial.println(Configs[i].vert);
+    Serial.println(Configs[i].bleu);
+  }
+
+
+  Sauvegarde_EEPROM();
+*/
