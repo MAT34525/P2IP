@@ -4,7 +4,7 @@
 #endif
 
 
-#define PIN 7
+#define PIN 5
 
 #define NUM_LEDS 16
 
