@@ -9,6 +9,9 @@
 
 // Encodeur
 
+#define pinInSensRotation 2
+#define pinInRotation 3
+#define pinInBoutton 4
 
 struct Heure {
   byte heure;
@@ -67,11 +70,14 @@ void setup() {
 
 void loop() {
 
-      display.clearDisplay();
-    display.setCursor(20, 0);
-    display.println("Hello there");
-    display.display();
-    delay(1000);
+  Serial.println("Hello there");
+  display.setTextSize(1);
+  display.setTextColor(WHITE);
+  display.clearDisplay();
+  display.setCursor(20, 0);
+  display.println("HI there");
+  display.display();
+  delay(1000);
 /*
 
   if(LireBoutton())

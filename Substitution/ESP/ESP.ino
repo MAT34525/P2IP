@@ -57,6 +57,8 @@ byte configurationParDefaut;
 Heure heureActuelle;
 int iter = 0;
 String valor_return = "";
+bool estConnecte = false;
+bool estAuto = false;
 
 // Configuration et sauvegardes ////////////////////////////////////////
 
@@ -135,10 +137,14 @@ void Sauvegarde_Brute_EEPROM(String strs[] )
   Serial.println("Sauvegarde brute des données dans l'EEPROM...");
 
   // Affiche toutes les Valeurs de l'EEPROM
-  for(int i = 0; i < EEPROM_SIZE-2 ; i++)
+  for(int i = 0; i < EEPROM_SIZE -2 ; i++)
   {
     EEPROM.write(i, strs[i].toInt());
   }
+
+  EEPROM.commit(); // Ajouté pour l'ESP
+
+  Dump_EEPROM();
 }
 
 // Affiche tout le contenu de l'EEPROM
@@ -218,6 +224,9 @@ class MyCallbacks : public BLECharacteristicCallbacks
         {
           Serial.println("START Atteint");
 
+          estConnecte = true;
+          estAuto = false;
+
           // on récuppère l'heure intiale passé en parametre
 
           if(value.length() > 6)
@@ -239,12 +248,13 @@ class MyCallbacks : public BLECharacteristicCallbacks
           // On envoie les données intiales
           String data = "";
 
+          data += String(luminositeMax) + "/";
+          data += String(luminositeMin) + "/";
+
           data += String(heureDebutActivite.heure) + "/";
           data += String(heureDebutActivite.minute) + "/";
           data += String(heureFinActivite.heure) + "/";
           data += String(heureFinActivite.minute) + "/";
-          data += String(luminositeMax) + "/";
-          data += String(luminositeMin) + "/";
 
           for(int i = 0; i < 5; i++)
           {
@@ -280,6 +290,22 @@ class MyCallbacks : public BLECharacteristicCallbacks
         }
         else if( value.startsWith("SYNC_HOUR"))
         {
+          if(value.length() > 6)
+          {
+            String tronc = value.substring(value.indexOf(" ", 0)+1, value.length());
+
+            heureActuelle.heure = tronc.substring(0, tronc.indexOf(' ')).toInt();
+
+            tronc = tronc.substring(tronc.indexOf(' ') + 1, tronc.length());
+
+            heureActuelle.minute = tronc.substring(tronc.indexOf(' ') + 1, tronc.length()).toInt();
+
+            Serial.print("Heure saisie : ");
+            Serial.print(heureActuelle.heure);
+            Serial.print(" : ");
+            Serial.println(heureActuelle.minute);
+          }
+
           Serial.println("SYNC_HOUR Atteint");
 
           String data = "RESP ";
@@ -317,9 +343,33 @@ class MyCallbacks : public BLECharacteristicCallbacks
 
           Sauvegarde_Brute_EEPROM(strs);
           Chargement_EEPROM();
+
+          delay(400);
+
+          for(int i = 0; i < NUM_LEDS; i ++)
+          {
+            strip.clear();
+            strip.setBrightness(255);
+            strip.setPixelColor(i, strip.Color(0,0, 255));
+            strip.show();
+
+            delay(50);
+          }
+
+          delay(400);
+
+          PulseGreen();
+        }
+        else if (value.startsWith("AUTO"))
+        {
+          Serial.println("AUTO Atteint");
+          estAuto = true;
+          estConnecte = false;
         }
         else if (value.startsWith("LEAVE"))
         {
+          estConnecte=false;
+          estAuto = false;
           Serial.println("LEAVE Atteint");
           ESP.restart();
         }
@@ -330,10 +380,37 @@ class MyCallbacks : public BLECharacteristicCallbacks
 
 };
 
+void InitConnection()
+{
+  Serial.println("Connection Bluetooth Initialisée !");
+  // Bluetooth
+  BLEDevice::init("MyESP32");
+
+  BLEServer *pServer = BLEDevice::createServer();
+
+  BLEService *pService = pServer->createService(SERVICE_UUID);
+
+  BLECharacteristic *pCharacteristic = pService->createCharacteristic(
+                                         CHARACTERISTIC_UUID,
+                                         BLECharacteristic::PROPERTY_READ |
+                                         BLECharacteristic::PROPERTY_WRITE
+                                       );
+
+  heureActuelle.heure = 10;
+  heureActuelle.minute = 25;
+
+  pCharacteristic->setCallbacks(new MyCallbacks());
+
+  pService->start();
+
+  BLEAdvertising *pAdvertising = pServer->getAdvertising();
+
+  pAdvertising->start();
+}
+
 // UTILITAIRE //////////////////////////////////////////////////////////////
 void Decision(bool &mvt, int &lum, int * rouge, int * vert, int * bleu, int *intensite)
 {
-
   // Priorité aux configurations
   for(int nConfig = 0; nConfig < 5; nConfig ++)
   {
@@ -357,8 +434,11 @@ void Decision(bool &mvt, int &lum, int * rouge, int * vert, int * bleu, int *int
     Serial.println("Decision dans activité");
     if(lum < 200)
     {
+      Serial.println("Configuration par défaut : " + String(configurationParDefaut));
+
       if(configurationParDefaut != 0)
       {
+        Serial.println("Decision dans configuration custom");
         *rouge = Configs[configurationParDefaut-1].rouge;
         *vert = Configs[configurationParDefaut-1].vert;
         *bleu = Configs[configurationParDefaut-1].bleu;
@@ -366,11 +446,12 @@ void Decision(bool &mvt, int &lum, int * rouge, int * vert, int * bleu, int *int
       }
       else
       {
+        
         Serial.println("Decision OH PUTAIN MES YEUXXXXXXXXXXXXXXXXXXXXX");
         *rouge = 255;
         *vert = 255;
         *bleu = 255;
-        *intensite = luminositeMax;
+        *intensite = 255;
       }
 
     }
@@ -393,7 +474,7 @@ void Decision(bool &mvt, int &lum, int * rouge, int * vert, int * bleu, int *int
       *rouge = 255;
       *vert = 0;
       *bleu = 0;
-      *intensite = luminositeMax;
+      *intensite = luminositeMin + 20;
     }
     else // Eteint
     {
@@ -403,6 +484,20 @@ void Decision(bool &mvt, int &lum, int * rouge, int * vert, int * bleu, int *int
       *bleu = 0;
       *intensite = 0;
     }
+  }
+
+  // On adapte la luminosite en fonction des préférences globales
+  if(*intensite != 0)
+  {
+    if(*intensite < luminositeMin)
+    {
+      *intensite = luminositeMin;
+    }
+    else if (*intensite > luminositeMax)
+    {
+      *intensite = luminositeMax;
+    }
+
   }
 }
 
@@ -473,67 +568,13 @@ void TransitionVersCouleur(int rouge, int  vert, int bleu, int lum, int tempsDeT
     
     for (int j = 0; j < NUM_LEDS; j++) {
       strip.setPixelColor(j, strip.Color(r, g, b));
-    }
+    };
+
+    strip.setBrightness(luminosite);
+
     strip.show();
     delay(10); // Délai pour créer l'effet de transition
   }
-}
-
-bool SynchronisationESP()
-{
-  /*
-  bool connecte = false;
-
-  int i = 0;
-  int moveLed = 0;
-
-  while(!connecte)
-  {
-
-    digitalWrite(pinOutESP, HIGH);
-
-    Serial.println("Envoi de la demande");
-
-    while(digitalRead(pinInESP) != 1)
-    {
-      // Bouget la led toutes les 20 demandes
-      if(i > 20)
-      {
-        i = 0;
-        moveLed++;
-      }
-
-      strip.clear();
-      strip.setPixelColor(moveLed%NUM_LEDS, strip.Color(255, 0, 0));
-      strip.show();
-
-      delay(10);
-
-      if(digitalRead(pinInESP) == 1)
-      {
-        heureActuelle.heure = RecevoirByte(pinInESP);
-        heureActuelle.minute = RecevoirByte(pinInESP);
-      }
-      i++;
-    }
-
-    digitalWrite(pinOutESP, LOW);
-
-    Serial.print("Heure reçue : ");
-    Serial.println(heureActuelle.heure);
-    Serial.print("Minute reçue : ");
-    Serial.println(heureActuelle.minute);
-
-    connecte = (
-        heureActuelle.heure < 24 && 
-        heureActuelle.heure >= 0 && 
-        heureActuelle.minute < 60 &&
-        heureActuelle.minute >= 0);
-  }
-
-  strip.clear();
-  strip.show();
-  */
 }
 
 // PROGRAMME PRINCIPAL //////////////////////////////////////////////////
@@ -545,9 +586,9 @@ void setup()
 
   // Anneau Led Initial
   pinMode(pinOutLampe, OUTPUT);
-  strip.setBrightness(100);
+  strip.setBrightness(0);
   strip.begin();
-  strip.fill(strip.Color(255,255,255));
+  strip.fill(strip.Color(0,0,0));
   strip.show();
 
   // Capteurs
@@ -570,41 +611,43 @@ void setup()
   Chargement_EEPROM();
 
   // Bluetooth
-  BLEDevice::init("MyESP32");
+  InitConnection();
 
-  BLEServer *pServer = BLEDevice::createServer();
-
-  BLEService *pService = pServer->createService(SERVICE_UUID);
-
-  BLECharacteristic *pCharacteristic = pService->createCharacteristic(
-                                         CHARACTERISTIC_UUID,
-                                         BLECharacteristic::PROPERTY_READ |
-                                         BLECharacteristic::PROPERTY_WRITE
-                                       );
-
-  pCharacteristic->setCallbacks(new MyCallbacks());
-
-  pService->start();
-
-  BLEAdvertising *pAdvertising = pServer->getAdvertising();
-
-  pAdvertising->start();
+  estConnecte = false;
 }
 
 void loop()
 {
   
-  /*
-  if(iter >= 500) // Heure actualisée au bout d'un certain temps
-  {
-    // On actualise l'heure
-    iter = 0;
-    RecevoirHeure();
-  }
-  iter++;
-  */
 
   delay(1000);
+
+  if(!estConnecte && !estAuto)
+  {
+    iter = 0;
+
+    while(!estConnecte)
+    {
+      strip.clear();
+      strip.setBrightness(255);
+      strip.setPixelColor(iter%NUM_LEDS, strip.Color(255, 0, 0));
+      strip.show();
+      delay(50);
+
+      iter++;
+    }
+
+    PulseGreen();
+
+    iter = 0;
+  }
+
+  if(estAuto && iter >= 20)
+  {
+    // Reinitialiser le broadcast bluetooth toutes les minutes
+    Serial.println("AUTO re-init bluetooth broadcast");
+    InitConnection();
+  }
 
   // Mode automatique
   
@@ -624,11 +667,60 @@ void loop()
 
   Decision(mouvement, luminosite, &rouge, &vert, &bleu, &intensite ); // L'heure est une variable globale
 
-  Serial.println("Decision couleur : " + String(rouge) + " , " + String(vert) + " , " + String(bleu) );
-  Serial.println("Decision luminosite : " + String(intensite));
+  // Serial.println("Decision couleur : " + String(rouge) + " , " + String(vert) + " , " + String(bleu) );
+  // Serial.println("Decision luminosite : " + String(intensite));
 
   // Utiliser une méthode pour lisser la transition
   TransitionVersCouleur(rouge, vert, bleu, intensite, 2000);
 
+  iter ++;
 
+  if(iter >= 20 ) // 20 défini par la valeur atteinte par iter au bout d'une minute d'exécution
+  {
+    Serial.print("Heure Actuelle : ");
+    Serial.print(heureActuelle.heure);
+    Serial.print(" : ");
+    Serial.println(heureActuelle.minute);
+
+    heureActuelle.minute ++;
+    iter = 0;
+  }
+
+  if(heureActuelle.minute >= 60)
+  {
+    heureActuelle.minute = 0;
+    heureActuelle.heure ++;
+
+    if(heureActuelle.heure >= 23)
+    {
+      heureActuelle.heure = 0;
+    }
+  }
+}
+
+void PulseGreen()
+{
+  strip.clear();
+
+  for(int i = 0; i < 25; i++)
+  {
+    strip.fill(strip.Color(0, 255, 0));
+    strip.setBrightness(i * 10);
+    strip.show();
+
+    delay(50);
+  }
+
+  delay(50);
+
+  strip.clear();
+
+  for(int j = 0; j < 25; j++)
+  {
+    strip.fill(strip.Color(0, 255, 0));
+    strip.setBrightness(255 - j * 10);
+    strip.show();
+    
+    delay(50);
+  }
 }

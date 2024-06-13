@@ -267,6 +267,22 @@ class MyCallbacks : public BLECharacteristicCallbacks {
         {
           Serial.println("SYNC_HOUR Atteint");
 
+          if(value.length() > 6)
+          {
+            String tronc = value.substring(value.indexOf(" ", 0)+1, value.length());
+
+            heureActuelle.heure = tronc.substring(0, tronc.indexOf(' ')).toInt();
+
+            tronc = tronc.substring(tronc.indexOf(' ') + 1, tronc.length());
+
+            heureActuelle.minute = tronc.substring(tronc.indexOf(' ') + 1, tronc.length()).toInt();
+
+            Serial.print("Heure saisie : ");
+            Serial.print(heureActuelle.heure);
+            Serial.print(" : ");
+            Serial.println(heureActuelle.minute);
+          }
+
           String data = "RESP ";
 
           data += String(heureActuelle.heure) + " " + String(heureActuelle.minute);
@@ -315,13 +331,9 @@ class MyCallbacks : public BLECharacteristicCallbacks {
 
 };
 
-void setup() {
-  Serial.begin(9600);
-
-  // Configuration
-  EEPROM.begin(EEPROM_SIZE); 
-  Chargement_EEPROM();
-
+void InitConnection()
+{
+  Serial.println("Connection Bluetooth Initialisée !");
   // Bluetooth
   BLEDevice::init("MyESP32");
 
@@ -345,6 +357,17 @@ void setup() {
   BLEAdvertising *pAdvertising = pServer->getAdvertising();
 
   pAdvertising->start();
+}
+
+void setup() {
+  Serial.begin(9600);
+
+  // Configuration
+  EEPROM.begin(EEPROM_SIZE); 
+  Chargement_EEPROM();
+
+  // Bluetooth
+  InitConnection();
 }
 
 void loop() {
